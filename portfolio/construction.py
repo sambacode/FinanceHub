@@ -8,6 +8,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 import scipy.cluster.hierarchy as sch
+from typing import Literal
 
 
 class HRP(object):
@@ -15,7 +16,7 @@ class HRP(object):
     Implements Hierarchical Risk Parity
     """
 
-    def __init__(self, data, method='single', metric='euclidean'):
+    def __init__(self, data, method="single", metric="euclidean", **_):
         """
         Combines the assets in `data` using HRP
         returns an object with the following attributes:
@@ -162,7 +163,7 @@ class MinVar(object):
     Implements Minimal Variance Portfolio
     """
 
-    def __init__(self, data):
+    def __init__(self, data, long_only = False, **_):
         """
         Combines the assets in 'data' by finding the minimal variance portfolio
         returns an object with the following atributes:
@@ -176,13 +177,19 @@ class MinVar(object):
 
         self.cov = data.cov()
 
-        eq_cons = {'type': 'eq',
-                   'fun': lambda w: w.sum() - 1}
+        cons = [{"type": "eq", "fun": lambda w: w.sum() - 1}]
+        if long_only:
+            cons.append({"type": "ineq", "fun": lambda w: w})  # >=0
 
         w0 = np.zeros(self.cov.shape[0])
 
-        res = minimize(self._port_var, w0, method='SLSQP', constraints=eq_cons,
-                       options={'ftol': 1e-9, 'disp': False})
+        res = minimize(
+            self._port_var,
+            w0,
+            method="SLSQP",
+            constraints=tuple(cons),
+            options={"ftol": 1e-9, "disp": False},
+        )
 
         if not res.success:
             raise ArithmeticError('Convergence Failed')
@@ -198,7 +205,7 @@ class IVP(object):
     Implements Inverse Variance Portfolio
     """
 
-    def __init__(self, data, use_std=False):
+    def __init__(self, data, use_std=False, **_):
         """
         Combines the assets in 'data' by their inverse variances
         returns an object with the following atributes:
@@ -229,7 +236,7 @@ class ERC(object):
     Implements Equal Risk Contribution portfolio
     """
 
-    def __init__(self, data, vol_target=0.10):
+    def __init__(self, data, vol_target=0.10, long_only=False, **_):
         """
         Combines the assets in 'data' so that all of them have equal contributions to the overall risk of the portfolio.
         Returns an object with the following atributes:
@@ -242,12 +249,14 @@ class ERC(object):
         self.vol_target = vol_target
         self.n_assets = self.cov.shape[0]
 
-        cons = ({'type': 'ineq',
+        cons = [{'type': 'ineq',
                  'fun': lambda w: vol_target - self._port_vol(w)},  # <= 0
                 {'type': 'eq',
-                 'fun': lambda w: 1 - w.sum()})
+                 'fun': lambda w: 1 - w.sum()}]
+        if long_only:
+            cons.append({"type": "ineq", "fun": lambda w: w})  # >=0
         w0 = np.zeros(self.n_assets)
-        res = minimize(self._dist_to_target, w0, method='SLSQP', constraints=cons)
+        res = minimize(self._dist_to_target, w0, method='SLSQP', constraints=tuple(cons))
         self.weights = pd.Series(index=self.cov.columns, data=res.x, name='ERC')
 
     def _port_vol(self, w):
@@ -258,6 +267,21 @@ class ERC(object):
 
     def _dist_to_target(self, w):
         return np.abs(self._risk_contribution(w) - np.ones(self.n_assets)/self.n_assets).sum()
+
+
+def calculate_weights(
+    data: pd.DataFrame, method: Literal["hrp", "minvar", "ivp", "erc"] = "ivp", **kwargs
+) -> pd.Series:
+    if method == "hrp":
+        return HRP(data=data, **kwargs).weights
+    elif method == "minvar":
+        return MinVar(data=data, **kwargs).weights
+    elif method == "ivp":
+        return IVP(data=data, **kwargs).weights
+    elif method == "erc":
+        return ERC(data=data, **kwargs).weights
+    else:
+        raise ValueError(f"Unknown method: {method}")
 
 
 """

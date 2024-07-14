@@ -1,4 +1,3 @@
-from portfolio.construction import HRP, MinVar, IVP, ERC
-from portfolio.performance import Performance, Drawdowns
+from portfolio.construction import HRP, MinVar, IVP, ERC, calculate_weights
 
-__all__ = ['HRP', 'MinVar', 'IVP', 'Performance', 'ERC', 'Drawdowns']
+__all__ = ['HRP', 'MinVar', 'IVP', 'ERC', 'calculate_weights']
